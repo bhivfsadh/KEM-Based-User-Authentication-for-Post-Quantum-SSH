@@ -29,6 +29,9 @@ Non-core items are intentionally not expanded into separate benchmark suites if 
   - [testScripts/test2/test2](testScripts/test2/test2)
   - [testScripts/test3/test3](testScripts/test3/test3)
   - Backend runners in [testScripts/backends](testScripts/backends)
+- Supplementary experiments (revision):
+  - [testScripts/supp_ciphertext_robustness/run](testScripts/supp_ciphertext_robustness/run) — Ciphertext robustness (Tables 1 & 2)
+  - [testScripts/supp_ciphertext_robustness/README.md](testScripts/supp_ciphertext_robustness/README.md) — Pre-computed results
 - Experiment notes:
   - [testScripts/plan.md](testScripts/plan.md)
 
@@ -156,6 +159,33 @@ Optional overrides:
 ```bash
 bash testScripts/test3/test3 --iterations 100 --rounds 2 --warmup 10 --rtt 67 --initcwnd-list "3 5 7 10 15 20 25 30 35 40 50"
 ```
+
+### Supplementary: Ciphertext Robustness (Revision)
+
+Malformed-ciphertext robustness and timing sanity checks for ML-KEM-768 KEM user authentication.
+
+```bash
+sudo bash testScripts/supp_ciphertext_robustness/run
+```
+
+Defaults:
+- mode=all (protocol-level test + local decapsulation microbenchmark)
+- same-len-tests=50 (per ciphertext class)
+- diff-len-tests=50 (per ciphertext class)
+- decaps-warmup=100
+- decaps-iterations=500
+
+Optional overrides:
+
+```bash
+# Protocol only (Table 1):
+sudo bash testScripts/supp_ciphertext_robustness/run --mode protocol --same-len-tests 100 --diff-len-tests 50
+
+# Local decaps only (Table 2, no sudo):
+bash testScripts/supp_ciphertext_robustness/run --mode local --decaps-warmup 5000 --decaps-iterations 20000
+```
+
+Pre-computed results (Tables 1 & 2): [testScripts/supp_ciphertext_robustness/README.md](testScripts/supp_ciphertext_robustness/README.md)
 
 ## Outputs
 

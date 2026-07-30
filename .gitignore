@@ -52,6 +52,7 @@ plan/
 test/
 testScripts/.work*/
 testScripts/**/results/
+testScripts/**/microbench_decaps
 
 # Key/cert artifacts
 id_*
