@@ -30,8 +30,12 @@ Non-core items are intentionally not expanded into separate benchmark suites if 
   - [testScripts/test3/test3](testScripts/test3/test3)
   - Backend runners in [testScripts/backends](testScripts/backends)
 - Supplementary experiments (revision):
-  - [testScripts/supp_ciphertext_robustness/run](testScripts/supp_ciphertext_robustness/run) — Ciphertext robustness (Tables 1 & 2)
-  - [testScripts/supp_ciphertext_robustness/README.md](testScripts/supp_ciphertext_robustness/README.md) — Pre-computed results
+  - [testScripts/supp_concurrency/run](testScripts/supp_concurrency/run) — Server concurrency: throughput + pending memory
+  - [testScripts/supp_ciphertext_robustness/run](testScripts/supp_ciphertext_robustness/run) — Ciphertext robustness
+  - [testScripts/supp_rtt_loss/run](testScripts/supp_rtt_loss/run) — RTT dense scan + packet loss
+  - [testScripts/test1/supp_falcon/run](testScripts/test1/supp_falcon/run) — Falcon-512/1024, extends Test 1
+  - [testScripts/test1/supp_password/run](testScripts/test1/supp_password/run) — Password baseline, extends Test 1
+  - Pre-computed results in each `reference_data.md`
 - Experiment notes:
   - [testScripts/plan.md](testScripts/plan.md)
 
@@ -90,6 +94,11 @@ For more configure options, run `./configure --help`.
 You may also refer to the `oqs-scripts/build_openssh.sh` script for an automated version of these steps.
 
 ## Experiments
+
+> **Note:** All tests and pre-computed results in this repository are provided for reference and
+> comparative evaluation only. Absolute latency, throughput, and resource figures depend on host
+> hardware, kernel version, system load, and network conditions. They are not intended as
+> strict performance guarantees across platforms.
 
 Run all experiments in one command:
 
@@ -160,32 +169,152 @@ Optional overrides:
 bash testScripts/test3/test3 --iterations 100 --rounds 2 --warmup 10 --rtt 67 --initcwnd-list "3 5 7 10 15 20 25 30 35 40 50"
 ```
 
+### Supplementary Experiments: Prerequisites
+
+Some supplementary experiments require special build flags and system setup:
+
+**Build with instrumentation flags:**
+
+```bash
+# For ciphertext robustness (Exp 3):
+grep KEM_TEST_MUTATION config.h || echo '#define KEM_TEST_MUTATION 1' >> config.h
+make -j4 ssh sshd sshd-session sshd-auth ssh-keygen
+
+# For server concurrency (Exps 1 & 2):
+grep KEM_TEST_INSTRUMENTATION config.h || echo '#define KEM_TEST_INSTRUMENTATION 1' >> config.h
+make -j4 ssh sshd sshd-session sshd-auth ssh-keygen
+```
+
+> Building without these flags produces normal OpenSSH binaries; the flags only activate
+> measurement hooks used by the experiments below.
+
+**cgroup v2 (required by server concurrency experiments):**
+
+```bash
+# Check if cgroup v2 is available:
+test -f /sys/fs/cgroup/cgroup.controllers && echo "cgroup v2 OK" || echo "cgroup v2 NOT available"
+# If not, add "systemd.unified_cgroup_hierarchy=1" to kernel cmdline and reboot.
+```
+
+**Network interface (required by RTT/loss experiments):**
+
+The RTT and loss experiments apply `tc netem` rules to the loopback interface (`lo`).
+`ethtool` offload disable is attempted but non-fatal; if `lo` does not support `ethtool`,
+the experiments still run correctly.
+
+**KEM identities (required by all supplementary experiments):**
+
+```bash
+bash test/step1/gen_kem_identity_mlkem768.sh
+```
+
+**Runtime estimates (2-core VM, 67 ms RTT where applicable):**
+
+| Experiment | Approx. Runtime |
+|:---|:---|
+| Test 1 | ~5 min |
+| Test 2 (all 3 profiles) | ~15 min |
+| Test 3 (11 initcwnd points) | ~10 min |
+| Throughput cgroup | ~30 min |
+| Pending memory | ~20 min |
+| Ciphertext robustness | ~5 min |
+| RTT dense scan | ~40 min |
+| Packet loss | ~25 min |
+| Falcon baselines | ~5 min |
+| Password baseline | ~5 min |
+
+---
+
+### Supplementary: Server Concurrency (Revision)
+
+Two experiments that measure server-side behaviour under controlled concurrency:
+(1) full-SSH throughput at N = 1,8,16,32,64 concurrent clients with cgroup CPU/memory
+accounting, and (2) per-connection memory cost of pending KEM challenges as a function of
+concurrency P.
+
+Requires `KEM_TEST_INSTRUMENTATION` build flag and cgroup v2 (see prerequisites above).
+
+```bash
+sudo bash testScripts/supp_concurrency/run
+```
+
+| Sub-experiment | Description | Pre-computed Results |
+|:---|:---|:---|
+| `throughput_cgroup/` | Full-SSH throughput with cgroup v2 CPU/memory isolation | [reference_data.md](testScripts/supp_concurrency/throughput_cgroup/reference_data.md) |
+| `pending_memory/` | Pending KEM challenge memory growth: $M(P)=\alpha+\beta P$ | [reference_data.md](testScripts/supp_concurrency/pending_memory/reference_data.md) |
+
+Run individually:
+```bash
+sudo bash testScripts/supp_concurrency/run --mode throughput
+sudo bash testScripts/supp_concurrency/run --mode pending
+```
+
 ### Supplementary: Ciphertext Robustness (Revision)
 
-Malformed-ciphertext robustness and timing sanity checks for ML-KEM-768 KEM user authentication.
+Malformed-ciphertext robustness and timing sanity checks for ML-KEM-768 KEM user
+authentication. Two test modes:
+
+- **Protocol-level** (`--mode protocol`): Sends mutated ciphertexts through a live
+  SSH connection and records whether the server rejects them with consistent error
+  codes (no distinguishable timing leak). Requires `sudo`.
+- **Local decaps** (`--mode local`): Micro-benchmark that calls the ML-KEM-768
+  decapsulation API directly with valid and mutated ciphertexts; measures whether
+  decapsulation time differs between valid and invalid inputs. Runs without `sudo`.
+
+Requires `KEM_TEST_MUTATION` build flag (see prerequisites above).
 
 ```bash
 sudo bash testScripts/supp_ciphertext_robustness/run
 ```
 
-Defaults:
-- mode=all (protocol-level test + local decapsulation microbenchmark)
-- same-len-tests=50 (per ciphertext class)
-- diff-len-tests=50 (per ciphertext class)
-- decaps-warmup=100
-- decaps-iterations=500
+| Table | Mode | Command |
+|:---|:---|:---|
+| Table 1 — Protocol-level | `--mode protocol` | `sudo bash testScripts/supp_ciphertext_robustness/run --mode protocol` |
+| Table 2 — Local decaps | `--mode local` | `bash testScripts/supp_ciphertext_robustness/run --mode local` |
 
-Optional overrides:
+Pre-computed results: [reference_data.md](testScripts/supp_ciphertext_robustness/reference_data.md)
+
+### Supplementary: RTT & Packet Loss (Revision)
+
+Two experiments extending the latency evaluation: (1) a dense RTT scan across
+9 points (0, 20, 40, 60, 80, 100, 120, 160, 200 ms) to verify smooth latency
+trends, and (2) random packet-loss sensitivity at 5 loss levels (0, 0.1, 0.5,
+1.0, 2.0%) with fixed 67 ms RTT. Both compare KEMUAuth (ML-KEM-768) vs ML-DSA-65.
+
+Applies `tc netem` on `lo`; requires `sudo` and `ip`/`tc`/`ping` installed.
 
 ```bash
-# Protocol only (Table 1):
-sudo bash testScripts/supp_ciphertext_robustness/run --mode protocol --same-len-tests 100 --diff-len-tests 50
-
-# Local decaps only (Table 2, no sudo):
-bash testScripts/supp_ciphertext_robustness/run --mode local --decaps-warmup 5000 --decaps-iterations 20000
+sudo bash testScripts/supp_rtt_loss/run
 ```
 
-Pre-computed results (Tables 1 & 2): [testScripts/supp_ciphertext_robustness/README.md](testScripts/supp_ciphertext_robustness/README.md)
+| Sub-experiment | Description | Pre-computed Results |
+|:---|:---|:---|
+| `rtt_scan/` | 9 RTT points, 500 iterations each | [reference_data.md](testScripts/supp_rtt_loss/rtt_scan/reference_data.md) |
+| `loss/` | Random loss at 67 ms, 5 seeds × 200 iterations | [reference_data.md](testScripts/supp_rtt_loss/loss/reference_data.md) |
+
+Run individually:
+```bash
+sudo bash testScripts/supp_rtt_loss/run --mode rtt
+sudo bash testScripts/supp_rtt_loss/run --mode loss
+```
+
+### Supplementary: Falcon & Password Baselines (Revision, integrated into Test 1)
+
+These experiments extend the Figure-3 authentication comparison (Test 1, 67 ms RTT,
+initcwnd=10) with two additional baselines: Falcon-512 and Falcon-1024 signature
+authentication, and Password--yescrypt as a deployment reference (not
+security-equivalent to post-quantum schemes).
+
+| Extension | Description | Pre-computed Results |
+|:---|:---|:---|
+| `test1/supp_falcon/` | Falcon-512 and Falcon-1024 authentication latency | [reference_data.md](testScripts/test1/supp_falcon/reference_data.md) |
+| `test1/supp_password/` | Password--yescrypt as a deployment baseline (not security-equivalent) | [reference_data.md](testScripts/test1/supp_password/reference_data.md) |
+
+Run individually:
+```bash
+sudo bash testScripts/test1/supp_falcon/run
+sudo bash testScripts/test1/supp_password/run
+```
 
 ## Outputs
 

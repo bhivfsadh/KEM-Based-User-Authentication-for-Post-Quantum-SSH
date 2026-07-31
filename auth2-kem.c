@@ -124,6 +124,10 @@ auth2_kem_stop(struct ssh *ssh)
 	if (ssh == NULL || (authctxt = ssh->authctxt) == NULL)
 		return;
 	ssh_dispatch_set(ssh, SSH2_MSG_USERAUTH_KEM_RESPONSE, NULL);
+#ifdef KEM_TEST_INSTRUMENTATION
+	if (authctxt->methoddata != NULL)
+		kem_test_dec_pending();
+#endif
 	kem_authctxt_free(authctxt->methoddata);
 	authctxt->methoddata = NULL;
 }
@@ -216,6 +220,9 @@ userauth_kem(struct ssh *ssh, const char *method)
 		ctx = NULL;
 		goto out;
 	}
+#ifdef KEM_TEST_INSTRUMENTATION
+	kem_test_inc_pending();
+#endif
 	authctxt->methoddata = ctx;
 	authctxt->postponed = 1;
 	ssh_dispatch_set(ssh, SSH2_MSG_USERAUTH_KEM_RESPONSE,
@@ -273,6 +280,9 @@ userauth_kem_and(struct ssh *ssh, const char *method)
 		ctx = NULL;
 		goto out;
 	}
+#ifdef KEM_TEST_INSTRUMENTATION
+	kem_test_inc_pending();
+#endif
 	authctxt->methoddata = ctx;
 	authctxt->postponed = 1;
 	ssh_dispatch_set(ssh, SSH2_MSG_USERAUTH_KEM_RESPONSE,

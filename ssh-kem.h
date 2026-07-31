@@ -48,4 +48,9 @@ int ssh_kem_derive_response(struct ssh *ssh, const char *user,
     const u_char *shared_secret, size_t shared_secret_len, u_char *response,
     size_t response_len);
 
+#ifdef KEM_TEST_INSTRUMENTATION
+void kem_test_inc_pending(void);
+void kem_test_dec_pending(void);
+#endif
+
 #endif

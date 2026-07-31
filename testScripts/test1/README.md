@@ -14,3 +14,10 @@
 	- readable.md
 - Run this test only: bash testScripts/test1/test1
 - Run all tests: bash testScripts/run_all
+
+## Extensions
+
+- **supp_falcon/**: Adds Falcon-512 and Falcon-1024 to the Fig.3 authentication comparison.
+  Run: `sudo bash testScripts/test1/supp_falcon/run`
+- **supp_password/**: Adds Password--yescrypt as a deployment baseline (not security-equivalent).
+  Run: `sudo bash testScripts/test1/supp_password/run`

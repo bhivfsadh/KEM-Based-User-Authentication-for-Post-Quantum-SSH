@@ -10,6 +10,7 @@
 #include "digest.h"
 #include "hmac.h"
 #include "kex.h"
+#include "log.h"
 #include "openbsd-compat/base64.h"
 #include "packet.h"
 #include "sshbuf.h"
@@ -497,3 +498,17 @@ out:
 	sshbuf_free(context);
 	return r;
 }
+
+#ifdef KEM_TEST_INSTRUMENTATION
+void
+kem_test_inc_pending(void)
+{
+	debug("KEM_PENDING_INC");
+}
+
+void
+kem_test_dec_pending(void)
+{
+	debug("KEM_PENDING_DEC");
+}
+#endif

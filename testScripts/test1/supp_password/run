@@ -1,0 +1,367 @@
+#!/usr/bin/env bash
+# run_test6_password.sh — Experiment 6: Password authentication baseline experiment
+#
+# Authentication latency test using SSH password method + PAM pam_unix + yescrypt.
+# Password authentication relies on a low-entropy shared secret and does not share
+# the same security semantics as KEMUAuth/ML-DSA; serves only as a performance
+# reference for common SSH deployments.
+#
+# Usage:
+#   sudo ./run_test6_password.sh
+
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "$0")/../../.." && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+BACKENDS_DIR="$ROOT_DIR/testScripts/backends"
+
+# ---- Must be set before sourcing sshd_test_harness.sh ----
+TEST_PORT="${TEST_PORT:-42610}"
+TEST_USER="${TEST_USER:-ssh_pwd_test}"
+TEST_PASSWORD="${TEST_PASSWORD:-testpwd_12345}"
+
+source "$BACKENDS_DIR/sshd_test_harness.sh"
+source "$BACKENDS_DIR/netem_setup.sh"
+
+# ---- Parameters ----
+RTT_MS="${RTT_MS:-67}"
+NETEM_IFACE="${NETEM_IFACE:-lo}"
+SUDO_BIN="${SUDO_BIN:-sudo}"
+ITERATIONS="${ITERATIONS:-500}"
+ROUNDS="${ROUNDS:-10}"
+TEST_HOST="${TEST_HOST:-127.0.0.1}"
+KEEP_WORKDIR="${KEEP_WORKDIR:-1}"
+SETUP_ACCOUNT="${SETUP_ACCOUNT:-1}"   # Whether to auto-create test account
+
+WORK_DIR="${WORK_DIR:-$ROOT_DIR/testScripts/.work-supp-test6}"
+RESULT_DIR="$SCRIPT_DIR/results"
+
+# ---- Root check (required for modifying PAM config and creating users) ----
+if [[ "$(id -u)" -ne 0 ]]; then
+  echo "[ERR] test6 requires root (user creation + sshd config)"
+  echo "[HINT] run: sudo $0"
+  exit 1
+fi
+
+check_ssh_binaries || exit 1
+
+# ---- Cleanup leftover processes ----
+# Kill leftover sshd processes to free the port
+pkill -f "sshd.*-f.*${WORK_DIR}" 2>/dev/null || true
+# Cleanup leftover cgroups
+find /sys/fs/cgroup -maxdepth 1 -name "ssh-*" -type d 2>/dev/null | while read d; do rmdir "$d" 2>/dev/null || true; done
+sleep 1
+check_netem_deps || exit 1
+mkdir -p "$WORK_DIR" "$RESULT_DIR"
+
+# ---- Create test account ----
+setup_test_account() {
+  if id "$TEST_USER" >/dev/null 2>&1; then
+    echo "[INFO] test user '$TEST_USER' already exists"
+  else
+    echo "[INFO] creating test user: $TEST_USER"
+    useradd -m -s /bin/bash "$TEST_USER" 2>/dev/null || {
+      echo "[ERR] failed to create user $TEST_USER"
+      exit 1
+    }
+  fi
+
+  # Set password
+  echo "${TEST_USER}:${TEST_PASSWORD}" | chpasswd 2>/dev/null || {
+    echo "[ERR] failed to set password for $TEST_USER"
+    exit 1
+  }
+
+  # Check password hash format
+  local hash_entry
+  hash_entry="$(grep "^$TEST_USER:" /etc/shadow 2>/dev/null | head -1)"
+  echo "[INFO] shadow entry: ${hash_entry:0:60}..."
+
+  if echo "$hash_entry" | grep -q '^\$y\$'; then
+    echo "[INFO] password uses yescrypt"
+  else
+    echo "[INFO] password hash prefix: $(echo "$hash_entry" | cut -d: -f2 | cut -c1-20)"
+  fi
+
+  # Create .ssh directory
+  mkdir -p "/home/$TEST_USER/.ssh"
+  chown "$TEST_USER:$TEST_USER" "/home/$TEST_USER/.ssh"
+  chmod 700 "/home/$TEST_USER/.ssh"
+}
+
+if [[ "$SETUP_ACCOUNT" == "1" ]]; then
+  setup_test_account
+fi
+
+# ---- Keys ----
+# server hostkey: Ed25519 (consistent with paper Figure 3)
+HOST_KEY_ED25519="$(gen_host_key_ed25519 "$WORK_DIR")"
+KNOWN_HOSTS="$WORK_DIR/known_hosts"
+gen_known_hosts "$WORK_DIR" "$HOST_KEY_ED25519.pub" >/dev/null
+
+# Client keys: Ed25519 / ML-DSA-65 / ML-KEM-768 (compared with password in the same run)
+ED25519_KEY="$WORK_DIR/id_ed25519_test6"
+MLDSA65_KEY="$WORK_DIR/id_mldsa65_test6"
+MLKEM768_KEY="$WORK_DIR/id_mlkem768_test6"
+
+for keyinfo in "ed25519:$ED25519_KEY" "mldsa-65:$MLDSA65_KEY" "mlkem768:$MLKEM768_KEY"; do
+  alg="${keyinfo%%:*}"; keyfile="${keyinfo##*:}"
+  if [[ ! -f "$keyfile" ]]; then
+    if [[ "$alg" == "mlkem768" ]]; then
+      # ML-KEM key is not ssh-keygen generated; copy existing pre-generated key
+      cp "$ROOT_DIR/test/.work-kem/id_mlkem768" "$keyfile" 2>/dev/null || {
+        echo "[WARN] no prebuilt mlkem768 key found at test/.work-kem/id_mlkem768"
+        continue
+      }
+    else
+      "$SSH_KEYGEN_BIN" -q -t "$alg" -N "" -f "$keyfile" >/dev/null 2>&1 || {
+        echo "[WARN] ssh-keygen -t $alg failed"
+        continue
+      }
+    fi
+  fi
+  if [[ -f "${keyfile}.pub" ]]; then
+    cat "${keyfile}.pub" >> "/home/$TEST_USER/.ssh/authorized_keys" 2>/dev/null || true
+  fi
+done
+
+# Register KEM public key to authorized_kem_keys (ex2 mode: extract public line)
+extract_kem_public() { awk 'BEGIN{IGNORECASE=1} $1 ~ /^public$/ {print $2; exit}' "$1"; }
+mkdir -p "/home/$TEST_USER/.ssh"
+: > "/home/$TEST_USER/.ssh/authorized_kem_keys"
+if [[ -f "$MLKEM768_KEY" ]]; then
+  pub="$(extract_kem_public "$MLKEM768_KEY" || true)"
+  if [[ -n "$pub" ]]; then
+    printf 'ML-KEM-768 %s\n' "$pub" >> "/home/$TEST_USER/.ssh/authorized_kem_keys"
+    echo "[INFO] KEM public key registered"
+  fi
+fi
+chown -R "$TEST_USER:$TEST_USER" "/home/$TEST_USER/.ssh" 2>/dev/null || true
+chown "$TEST_USER:$TEST_USER" "$WORK_DIR"/id_* 2>/dev/null || true
+echo "[INFO] keys generated: ed25519, mldsa-65, mlkem768"
+
+# ---- sshd config (password + pubkey both enabled, client selects via PreferredAuthentications) ----
+SSHD_CFG="$WORK_DIR/sshd.conf"
+SSHD_LOG="$WORK_DIR/sshd.log"
+
+cat > "$SSHD_CFG" <<EOF
+Port $TEST_PORT
+ListenAddress $TEST_HOST
+PidFile $WORK_DIR/sshd.pid
+HostKey $HOST_KEY_ED25519
+HostKeyAlgorithms ssh-ed25519
+KexAlgorithms mlkem768x25519-sha256
+LogLevel ERROR
+SshdSessionPath $SSHD_SESSION_BIN
+SshdAuthPath $SSHD_AUTH_BIN
+
+# Password + pubkey + KEM all enabled
+PasswordAuthentication yes
+PubkeyAuthentication yes
+PubkeyAcceptedAlgorithms ssh-ed25519,ssh-mldsa-65
+KEMAuthentication yes
+KEMAuthAlgorithms ML-KEM-768
+AuthorizedKEMKeysFile /home/$TEST_USER/.ssh/authorized_kem_keys
+KbdInteractiveAuthentication no
+ChallengeResponseAuthentication no
+PermitRootLogin no
+
+MaxStartups 256
+MaxSessions 1
+LoginGraceTime 120
+StrictModes no
+X11Forwarding no
+AllowAgentForwarding no
+AllowTcpForwarding no
+PrintMotd no
+EOF
+
+# ---- Password input script (SSH_ASKPASS) ----
+ASKPASS_SCRIPT="$WORK_DIR/ssh_askpass.sh"
+cat > "$ASKPASS_SCRIPT" <<EOF
+#!/bin/bash
+echo "$TEST_PASSWORD"
+EOF
+chmod +x "$ASKPASS_SCRIPT"
+
+# ---- Results files ----
+RAW_CSV="$RESULT_DIR/password_raw.csv"
+SUMMARY_CSV="$RESULT_DIR/password_summary.csv"
+
+echo "auth_method,round,iteration,latency_ms,success,retcode" > "$RAW_CSV"
+echo "auth_method,total,successes,p50_ms,p95_ms,mean_ms" > "$SUMMARY_CSV"
+
+# ---- Environment metadata ----
+# Extract yescrypt parameters ($y$j9T$... format: $y$<params>$<salt>$<hash>)
+YESCRYPT_PARAMS="NA"
+YESCRYPT_SALT_LEN="NA"
+YESCRYPT_COST="NA"
+shadow_hash="$(grep "^$TEST_USER:" /etc/shadow 2>/dev/null | cut -d: -f2 || echo "")"
+if echo "$shadow_hash" | grep -q '^\$y\$'; then
+  # Parse yescrypt parameter field
+  YESCRYPT_PARAMS="$(echo "$shadow_hash" | cut -d'$' -f3)"
+  YESCRYPT_SALT_LEN="$(echo "$shadow_hash" | cut -d'$' -f4 | wc -c)"
+  # Attempt to extract cost factor (j9T encoding etc.)
+  if echo "$YESCRYPT_PARAMS" | grep -q '^j'; then
+    YESCRYPT_COST="$(echo "$YESCRYPT_PARAMS" | sed 's/^j//')"
+  fi
+  echo "[INFO] yescrypt params=$YESCRYPT_PARAMS cost=$YESCRYPT_COST"
+fi
+
+cat > "$RESULT_DIR/metadata.txt" <<EOF
+experiment: test6_password_baseline
+timestamp: $(date -Iseconds)
+hostname: $(hostname)
+cpu_model: $(lscpu 2>/dev/null | grep 'Model name' | sed 's/Model name:\s*//' || echo NA)
+kernel: $(uname -r)
+test_user: $TEST_USER
+test_password_len: ${#TEST_PASSWORD}
+pam_version: $(rpm -q pam 2>/dev/null || dpkg -l libpam0g 2>/dev/null | tail -1 || echo NA)
+libxcrypt_version: $(rpm -q libxcrypt 2>/dev/null || echo NA)
+yescrypt_params: $YESCRYPT_PARAMS
+yescrypt_cost: $YESCRYPT_COST
+password_hash_prefix: $(echo "$shadow_hash" | cut -c1-20)
+rtt_ms: $RTT_MS
+transport_kex: mlkem768x25519-sha256
+server_hostkey: ssh-ed25519
+openssh_commit: $(git -C "$ROOT_DIR" rev-parse HEAD 2>/dev/null || echo NA)
+EOF
+
+# ---- Start sshd ----
+# Set netem RTT (consistent with paper Figure 3: RTT≈67ms)
+if [[ "$RTT_MS" -gt 0 ]]; then
+  set_netem_delay "$NETEM_IFACE" "$RTT_MS"
+fi
+
+"$SSHD_BIN" -D -f "$SSHD_CFG" -E "$SSHD_LOG" &
+SSHD_PID=$!
+sleep 1
+
+cleanup_sshd() {
+  if [[ -n "${SSHD_PID:-}" ]] && kill -0 "$SSHD_PID" 2>/dev/null; then
+    kill "$SSHD_PID" 2>/dev/null || true
+    wait "$SSHD_PID" 2>/dev/null || true
+  fi
+  clear_netem "$NETEM_IFACE"
+}
+trap cleanup_sshd EXIT
+
+echo "[INFO] sshd PID=$SSHD_PID"
+
+# ---- Test: interleaved polling (password + Ed25519 pubkey, single run to eliminate environment drift) ----
+echo ""
+echo "================================================"
+echo "  Test6: password + ed25519 + mldsa-65 + mlkem768"
+echo "  User: $TEST_USER  RTT: ${RTT_MS}ms"
+echo "  Iterations: $ITERATIONS (each method)"
+echo "================================================"
+echo ""
+
+# ==== cases array (ex2 mode): label|auth_mode|impl_alg|id_file ====
+cases=(
+  "password|password|yescrypt|"
+  "ed25519|publickey|ssh-ed25519|$ED25519_KEY"
+  "mldsa65|publickey|ssh-mldsa-65|$MLDSA65_KEY"
+  "kem|publickey-kem|ML-KEM-768|$MLKEM768_KEY"
+)
+
+# Common SSH options
+SSH_COMMON="-o StrictHostKeyChecking=no -o UserKnownHostsFile=$KNOWN_HOSTS -o ControlMaster=no -o ControlPersist=no -o ConnectTimeout=30 -o LogLevel=ERROR -o KexAlgorithms=mlkem768x25519-sha256 -o HostKeyAlgorithms=ssh-ed25519 -p $TEST_PORT"
+
+run_once() {
+  local label="$1" auth_mode="$2" impl_alg="$3" id_file="$4"
+  local start_ep end_ep lat_ms retcode opts
+  start_ep="$(date +%s.%N)"
+
+  case "$auth_mode" in
+    password)
+      SSH_ASKPASS="$ASKPASS_SCRIPT" DISPLAY=dummy:0 \
+        setsid "$SSH_BIN" $SSH_COMMON \
+          -o BatchMode=no -o PasswordAuthentication=yes \
+          -o KbdInteractiveAuthentication=no -o PubkeyAuthentication=no \
+          -o KEMAuthentication=no -o PreferredAuthentications=password \
+          "$TEST_USER@$TEST_HOST" true >/dev/null 2>&1
+      retcode=$?
+      ;;
+    publickey)
+      "$SSH_BIN" $SSH_COMMON \
+        -o BatchMode=yes -o PasswordAuthentication=no \
+        -o PubkeyAuthentication=yes -o KEMAuthentication=no \
+        -o PreferredAuthentications=publickey \
+        -o PubkeyAcceptedAlgorithms="$impl_alg" \
+        -o IdentityFile="$id_file" \
+        "$TEST_USER@$TEST_HOST" true >/dev/null 2>&1
+      retcode=$?
+      ;;
+    publickey-kem)
+      "$SSH_BIN" $SSH_COMMON \
+        -o BatchMode=yes -o PasswordAuthentication=no \
+        -o PubkeyAuthentication=no -o KEMAuthentication=yes \
+        -o PreferredAuthentications=publickey-kem \
+        -o KEMAuthAlgorithms="$impl_alg" \
+        -o IdentityKEMFile="$id_file" \
+        "$TEST_USER@$TEST_HOST" true >/dev/null 2>&1
+      retcode=$?
+      ;;
+  esac
+
+  end_ep="$(date +%s.%N)"
+  lat_ms="$(python3 -c "s=$start_ep;e=$end_ep;print(f'{(e-s)*1000:.2f}')" 2>/dev/null || echo NA)"
+  local success=0; [[ "$retcode" -eq 0 ]] && success=1
+  echo "${label},1,${ITERATION_IDX:-0},${lat_ms},${success},${retcode}" >> "$RAW_CSV"
+}
+
+# ==== Polling rotation execution (ex2 mode) ====
+N=${#cases[@]}
+for ((r=1; r<=ROUNDS; r++)); do
+  for ((offset=0; offset<N; offset++)); do
+    idx=$(( (r - 1 + offset) % N ))
+    IFS='|' read -r label auth_mode impl_alg id_file <<< "${cases[$idx]}"
+
+    echo "[$(date +%H:%M:%S)] $label ($auth_mode) round $r/$ROUNDS"
+    for ((i=0; i<ITERATIONS; i++)); do
+      ITERATION_IDX=$i
+      run_once "$label" "$auth_mode" "$impl_alg" "$id_file"
+    done
+  done
+done
+
+echo ""
+echo "================================================"
+echo "  Test6 complete!"
+echo "================================================"
+
+# Summary (using dedicated analysis script)
+if command -v python3 >/dev/null 2>&1; then
+  python3 "$SCRIPT_DIR/analyze_test6.py" "$RAW_CSV" "$SUMMARY_CSV" "$RESULT_DIR/test6_report.md" 2>/dev/null || {
+    # Fallback: inline summary
+    echo "[WARN] analyze_test6.py failed, using inline fallback"
+    python3 -c "
+import csv
+from collections import defaultdict
+rows = []
+with open('$RAW_CSV') as f:
+    for r in csv.DictReader(f):
+        rows.append(r)
+groups = defaultdict(list)
+for r in rows:
+    lt = r.get('latency_ms','NA')
+    if lt != 'NA': groups[r['auth_method']].append(float(lt))
+with open('$SUMMARY_CSV','w') as f:
+    f.write('auth_method,total,successes,p50_ms,p95_ms,mean_ms\n')
+    for method in sorted(groups.keys()):
+        lats = sorted(groups[method])
+        n = len(lats)
+        p50 = lats[int(n*0.50)]
+        p95 = lats[min(int(n*0.95),n-1)]
+        mean_val = sum(lats)/n
+        f.write(f'{method},{n},{n},{p50:.2f},{p95:.2f},{mean_val:.2f}\n')
+print('Summary written to $SUMMARY_CSV')
+for method in sorted(groups.keys()):
+    lats = sorted(groups[method])
+    print(f'  {method}: n={len(lats)} p50={lats[int(len(lats)*0.50)]:.2f}ms p95={lats[min(int(len(lats)*0.95),len(lats)-1)]:.2f}ms')
+"
+  }
+else
+  echo "[WARN] python3 not found, skipping analysis"
+fi

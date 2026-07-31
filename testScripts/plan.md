@@ -12,9 +12,12 @@ This directory contains the reviewer-facing experiment wrappers.
 ## Test Groups
 
 ### test1
-- Goal: Figure-3 dataset generation
+- Goal: Figure-3 dataset generation (authentication algorithm comparison)
 - Script: testScripts/test1/test1
 - Outputs: raw_runs.csv, round_means_append.csv, summary.csv, readable.md
+- Extensions:
+  - `supp_falcon/`: Falcon-512 and Falcon-1024 benchmarks
+  - `supp_password/`: Password--yescrypt deployment baseline
 
 ### test2-C / test2-I / test2-L
 - Goal: Figure-4 dataset generation at close/intermediate/long latency
@@ -22,11 +25,35 @@ This directory contains the reviewer-facing experiment wrappers.
 - Outputs (per level): raw_runs.csv, round_means_append.csv, summary.csv, readable.md
 
 ### test3
-- Goal: Figure-5 dataset generation
+- Goal: Figure-5 dataset generation (initcwnd scan)
 - Script: testScripts/test3/test3
 - Outputs: raw_runs.csv, round_means_append.csv, summary.csv, readable.md
+
+## Supplementary Experiments
+
+### supp_ciphertext_robustness
+- Goal: Malformed-ciphertext robustness and timing sanity checks
+- Script: testScripts/supp_ciphertext_robustness/run
+- Two tables: (1) protocol-level observable behavior, (2) local decapsulation micro-benchmark
+- Requires `KEM_TEST_MUTATION` build flag
+
+### supp_concurrency
+- Goal: Server-side concurrency stress tests
+- Script: testScripts/supp_concurrency/run
+- Sub-experiments:
+  - `throughput_cgroup/`: Full-SSH throughput with cgroup v2 CPU/memory isolation
+  - `pending_memory/`: Pending KEM challenge memory growth ($M(P)=\alpha+\beta P$)
+- Requires `KEM_TEST_INSTRUMENTATION` build flag, cgroup v2
+
+### supp_rtt_loss
+- Goal: Dense RTT scan (9 points) and random packet loss sensitivity
+- Script: testScripts/supp_rtt_loss/run (--mode rtt|loss|all)
+- Sub-experiments:
+  - `rtt_scan/`: 9 RTT points (0–200 ms), 500 iterations each
+  - `loss/`: 5 loss levels (0–2%), 5 seeds × 200 iterations
 
 ## Rules
 - Scripts are one-click runnable with fixed settings.
 - Keep output naming stable and minimal.
 - Keep all content in English for reviewer usability.
+- Supplementary experiments use `supp_` prefix and `run` entry script.
