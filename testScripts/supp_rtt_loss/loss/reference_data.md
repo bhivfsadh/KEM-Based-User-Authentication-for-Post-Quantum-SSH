@@ -1,6 +1,6 @@
 # loss — Pre-computed Results
 
-> Host: toki-virtual-machine, Linux 6.8.0-136-generic  
+> Host: de-identified (Linux 6.8.0-136-generic)  
 > Transport KEX: mlkem768x25519-sha256, Server HostKey: ssh-ed25519  
 > RTT: 67 ms, TCP initcwnd: 10 MSS  
 > 5 seeds × 400 iterations = 2000 connections per loss level per method

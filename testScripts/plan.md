@@ -13,11 +13,14 @@ This directory contains the reviewer-facing experiment wrappers.
 
 ### test1
 - Goal: Figure-3 dataset generation (authentication algorithm comparison)
-- Script: testScripts/test1/test1
-- Outputs: raw_runs.csv, round_means_append.csv, summary.csv, readable.md
-- Extensions:
-  - `supp_falcon/`: Falcon-512 and Falcon-1024 benchmarks
-  - `supp_password/`: Password--yescrypt deployment baseline
+- Unified 13-algorithm runner: `testScripts/fig3_rerun/run`
+  (Ed25519, ML-DSA-44/65/87, Falcon-512/1024, SLH-DSA-SHA2-128f/192f/256f,
+  ML-KEM-512/768/1024, Password--yescrypt; interleaved polling)
+- Lightweight variant (10 signature/KEM algorithms, no Falcon/Password):
+  `testScripts/test1/test1`
+- Outputs (unified run, in `testScripts/fig3_rerun/results/`):
+  raw_runs.csv, summary.csv, readable.md, metadata.txt
+- Pre-computed results: `testScripts/test1/reference_data.md` (unified table)
 
 ### test2-C / test2-I / test2-L
 - Goal: Figure-4 dataset generation at close/intermediate/long latency

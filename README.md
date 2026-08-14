@@ -26,6 +26,7 @@ Non-core items are intentionally not expanded into separate benchmark suites if 
 - Reviewer-facing experiments:
   - [testScripts/run_all](testScripts/run_all)
   - [testScripts/test1/test1](testScripts/test1/test1)
+  - [testScripts/fig3_rerun/run](testScripts/fig3_rerun/run) — unified Figure-3 dataset (13 algorithms)
   - [testScripts/test2/test2](testScripts/test2/test2)
   - [testScripts/test3/test3](testScripts/test3/test3)
   - Backend runners in [testScripts/backends](testScripts/backends)
@@ -33,8 +34,6 @@ Non-core items are intentionally not expanded into separate benchmark suites if 
   - [testScripts/supp_concurrency/run](testScripts/supp_concurrency/run) — Server concurrency: throughput + pending memory
   - [testScripts/supp_ciphertext_robustness/run](testScripts/supp_ciphertext_robustness/run) — Ciphertext robustness
   - [testScripts/supp_rtt_loss/run](testScripts/supp_rtt_loss/run) — RTT dense scan + packet loss
-  - [testScripts/test1/supp_falcon/run](testScripts/test1/supp_falcon/run) — Falcon-512/1024, extends Test 1
-  - [testScripts/test1/supp_password/run](testScripts/test1/supp_password/run) — Password baseline, extends Test 1
   - Pre-computed results in each `reference_data.md`
 - Experiment notes:
   - [testScripts/plan.md](testScripts/plan.md)
@@ -43,6 +42,13 @@ Non-core items are intentionally not expanded into separate benchmark suites if 
 
 
 Recommended environment: Linux with sudo privileges for network shaping.
+
+### Versions
+
+- OpenSSH: 10.2p1 (OQS-OpenSSH 2025-12 fork)
+- liboqs: 0.15.0 (AVX2-optimized ML-KEM, ML-DSA, SLH-DSA/FN-DSA, Falcon)
+- OpenSSL: 3.0.2
+- Build flow: `oqs-scripts/clone_liboqs.sh` → `oqs-scripts/build_liboqs.sh` → `oqs-scripts/build_openssh.sh`
 
 ### Quick Build (Recommended)
 
@@ -106,23 +112,38 @@ Run all experiments in one command:
 bash testScripts/run_all
 ```
 
-### Test 1 (Figure-3 style)
+### Test 1 (Figure-3 style, unified 13-algorithm dataset)
+
+The unified Figure-3 dataset compares 13 client-authentication algorithms in one
+campaign (RTT=67ms, initcwnd=10 MSS, server host-key Ed25519): Ed25519,
+ML-DSA-44/65/87, Falcon-512/1024, SLH-DSA-SHA2-128f/192f/256f, ML-KEM-512/768/1024,
+and Password (yescrypt). It replaces the earlier separate test1 (10 algorithms),
+supp_falcon, and supp_password tables. Requires root (test account, tc, ip route,
+initcwnd/offload setup).
 
 ```bash
-bash testScripts/test1/test1
+sudo bash testScripts/fig3_rerun/run
 ```
 
 Defaults:
-- rounds=1
-- iterations=50
+- iterations=2000
 - warmup=5
 - RTT=67ms
 - initcwnd=10
 
-Optional overrides:
+Quick smoke / overrides:
 
 ```bash
-bash testScripts/test1/test1 --iterations 100 --rounds 2 --warmup 10 --rtt 67 --initcwnd 10
+sudo env ITERATIONS=5 WARMUP=1 bash testScripts/fig3_rerun/run
+```
+
+Pre-computed results: [testScripts/test1/reference_data.md](testScripts/test1/reference_data.md)
+
+A lightweight 10-algorithm variant (no Falcon/Password) remains at
+`testScripts/test1/test1` for fast checks:
+
+```bash
+bash testScripts/test1/test1
 ```
 
 ### Test 2 (Figure-4 style, close/intermediate/long RTT)
@@ -212,7 +233,7 @@ bash test/step1/gen_kem_identity_mlkem768.sh
 
 | Experiment | Approx. Runtime |
 |:---|:---|
-| Test 1 | ~5 min |
+| Test 1 (unified 13-alg, iterations=2000) | ~6.3 h |
 | Test 2 (all 3 profiles) | ~15 min |
 | Test 3 (11 initcwnd points) | ~10 min |
 | Throughput cgroup | ~30 min |
@@ -220,8 +241,6 @@ bash test/step1/gen_kem_identity_mlkem768.sh
 | Ciphertext robustness | ~5 min |
 | RTT dense scan | ~40 min |
 | Packet loss | ~25 min |
-| Falcon baselines | ~5 min |
-| Password baseline | ~5 min |
 
 ---
 
@@ -296,24 +315,6 @@ Run individually:
 ```bash
 sudo bash testScripts/supp_rtt_loss/run --mode rtt
 sudo bash testScripts/supp_rtt_loss/run --mode loss
-```
-
-### Supplementary: Falcon & Password Baselines (Revision, integrated into Test 1)
-
-These experiments extend the Figure-3 authentication comparison (Test 1, 67 ms RTT,
-initcwnd=10) with two additional baselines: Falcon-512 and Falcon-1024 signature
-authentication, and Password--yescrypt as a deployment reference (not
-security-equivalent to post-quantum schemes).
-
-| Extension | Description | Pre-computed Results |
-|:---|:---|:---|
-| `test1/supp_falcon/` | Falcon-512 and Falcon-1024 authentication latency | [reference_data.md](testScripts/test1/supp_falcon/reference_data.md) |
-| `test1/supp_password/` | Password--yescrypt as a deployment baseline (not security-equivalent) | [reference_data.md](testScripts/test1/supp_password/reference_data.md) |
-
-Run individually:
-```bash
-sudo bash testScripts/test1/supp_falcon/run
-sudo bash testScripts/test1/supp_password/run
 ```
 
 ## Outputs

@@ -1,6 +1,6 @@
 # rtt_scan — Pre-computed Results
 
-> Host: toki-virtual-machine, Linux 6.8.0-136-generic  
+> Host: de-identified (Linux 6.8.0-136-generic)  
 > Transport KEX: mlkem768x25519-sha256, Server HostKey: ssh-ed25519  
 > TCP initcwnd: 10 MSS, 50 iterations per RTT point per method
 

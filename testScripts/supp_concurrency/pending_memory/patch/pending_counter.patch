@@ -4,7 +4,7 @@
 #          track current pending challenge count and peak.
 #
 # Apply:
-#   cd /home/toki/KEMSSH/KEMSSH
+#   cd <repo-root>
 #   patch -p1 < test/newTest/test2/patch/pending_counter.patch
 #   make clean
 #   CFLAGS="-DKEM_TEST_INSTRUMENTATION" make -j4 sshd ssh

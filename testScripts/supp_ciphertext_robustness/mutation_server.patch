@@ -6,7 +6,7 @@
 #   input_userauth_kem_response() to stderr for L_remote calculation.
 #
 # Apply:
-#   cd /home/toki/KEMSSH/KEMSSH
+#   cd <repo-root>
 #   patch -p1 < test/newTest/test3/patch/mutation_server.patch
 #   make clean
 #   CFLAGS="-DKEM_TEST_MUTATION" make -j4 sshd ssh

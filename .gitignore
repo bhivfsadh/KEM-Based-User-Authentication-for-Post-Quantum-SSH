@@ -53,6 +53,7 @@ test/
 testScripts/.work*/
 testScripts/**/results/
 testScripts/**/microbench_decaps
+testScripts/**/*.log
 
 # Key/cert artifacts
 id_*

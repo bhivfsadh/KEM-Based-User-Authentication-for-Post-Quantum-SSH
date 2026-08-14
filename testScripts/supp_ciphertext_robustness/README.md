@@ -2,6 +2,10 @@
 
 The protocol-level security of KEMUAuth is established by the security analysis in the paper. Since this model does not capture implementation leakage, we also perform basic checks on the reference implementation when it processes attacker-chosen KEM ciphertexts. These checks are intended to detect obvious input-handling failures, crashes, inconsistent protocol behavior, and coarse timing differences that could provide an initial indication of implementation-level weaknesses. They do not establish constant-time execution or resistance to cache, power, electromagnetic, or fault-injection attacks. Production deployments therefore require additional assurance through formal implementation analysis, constant-time verification, independent code review, dynamic leakage testing, and platform-specific fault testing so that the implementation remains consistent with the analyzed design.
 
+## Pre-computed Results
+
+[reference_data.md](reference_data.md)
+
 ## Running the Tests
 
 ### One-Click Reproduction

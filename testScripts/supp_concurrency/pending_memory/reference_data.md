@@ -1,6 +1,6 @@
 # pending_memory — Pre-computed Results
 
-> Host: toki-virtual-machine, Linux 6.8.0-136-generic  
+> Host: de-identified (Linux 6.8.0-136-generic)  
 > OpenSSH: 10.2-2025-12_p1 + liboqs 2025-12 + OpenSSL 3.0.2  
 > Transport KEX: mlkem768x25519-sha256, Server HostKey: ssh-mldsa-65  
 > RESPONSE_DELAY_MS=20000, HOLD_WINDOW_SEC=35, cgroup v2  

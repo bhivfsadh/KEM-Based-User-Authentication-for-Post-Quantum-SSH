@@ -12,6 +12,13 @@ fixed 67 ms RTT to compare KEMUAuth and ML-DSA-65 tail-latency degradation.
 | `rtt_scan/` | Dense RTT scan: 9 points, 500 iterations each | RTT ∈ {0,20,40,60,80,100,120,160,200} ms |
 | `loss/` | Random loss at RTT=67ms: 5 seeds × 200 iterations | Loss ∈ {0,0.1,0.5,1.0,2.0}% |
 
+## Pre-computed Results
+
+| Sub-experiment | Results |
+|:---|:---|
+| `rtt_scan/` | [reference_data.md](rtt_scan/reference_data.md) |
+| `loss/` | [reference_data.md](loss/reference_data.md) |
+
 ## Quick Start
 
 ```bash

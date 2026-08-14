@@ -11,6 +11,13 @@ and (2) per-connection memory cost of pending KEM challenges.
 | `throughput_cgroup/` | Full-SSH concurrency throughput with cgroup v2 CPU and memory isolation (§1 of testInfo) | Complements Fig.3 by isolating server-side efficiency |
 | `pending_memory/` | Pending KEM challenge memory growth under artificial client delay (§2 of testInfo) | Measures per-challenge state overhead separate from connection cost |
 
+## Pre-computed Results
+
+| Sub-experiment | Results |
+|:---|:---|
+| `throughput_cgroup/` | [reference_data.md](throughput_cgroup/reference_data.md) |
+| `pending_memory/` | [reference_data.md](pending_memory/reference_data.md) |
+
 ## Shared Requirements
 
 - Root access (cgroup v2, CPU affinity)

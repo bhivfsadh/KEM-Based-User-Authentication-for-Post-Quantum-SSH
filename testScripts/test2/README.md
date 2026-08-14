@@ -18,3 +18,7 @@
 	- readable.md
 - Run this test only: bash testScripts/test2/test2
 - Run all tests: bash testScripts/run_all
+- Pre-computed results:
+	- [reference_data_C.md](reference_data_C.md) — close latency
+	- [reference_data_I.md](reference_data_I.md) — intermediate latency
+	- [reference_data_L.md](reference_data_L.md) — long latency
