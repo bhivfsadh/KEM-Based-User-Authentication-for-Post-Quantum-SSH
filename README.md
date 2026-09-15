@@ -1,3 +1,14 @@
+> [!IMPORTANT]
+> **Maintained KEMUAuth project:**<br>
+> https://github.com/kemuauth/KEMUAuth
+>
+> This repository is preserved as the historical ICNP 2026 research artifact.
+> For current documentation, reproducibility instructions, and ongoing
+> development, please use the maintained project repository above.
+>
+> The exact original artifact snapshot is preserved by the tag
+> `icnp-2026-original-artifact`.
+
 # KEMUAuth: KEM-Based-User-Authentication-for-Post-Quantum-SSH (Anonymous Research Artifact)
 
 This repository is an research artifact for evaluating KEM-based user authentication in SSH based on OQS-openSSHv10.
